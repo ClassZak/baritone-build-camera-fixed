@@ -537,7 +537,11 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
             // only change look direction if it's safe (don't want to fuck up an in progress parkour for example
             Rotation rot = toBreak.get().getB();
             BetterBlockPos pos = toBreak.get().getA();
-            baritone.getLookBehavior().updateTarget(rot, true);
+            // Only update rotation if we aren't already looking at the target
+            // or the rotation isn't yet accurate enough. This prevents camera jitter.
+            if (!ctx.isLookingAt(pos) || !ctx.playerRotations().isReallyCloseTo(rot)) {
+                baritone.getLookBehavior().updateTarget(rot, true);
+            }
             MovementHelper.switchToBestToolFor(ctx, bcc.get(pos));
             if (ctx.player().isCrouching()) {
                 // really horrible bug where a block is visible for breaking while sneaking but not otherwise
@@ -554,10 +558,27 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
         Optional<Placement> toPlace = searchForPlacables(bcc, desirableOnHotbar);
         if (toPlace.isPresent() && isSafeToCancel && ctx.player().onGround() && ticks <= 0) {
             Rotation rot = toPlace.get().rot;
-            baritone.getLookBehavior().updateTarget(rot, true);
+            // Same as above: avoid jitter by skipping redundant rotation updates.
+            BlockPos targetBlock = toPlace.get().placeAgainst;
+            Rotation targetRot = toPlace.get().rot;
+            Rotation playerRot = ctx.playerRotations();
+            System.out.printf(
+                    "placeAgainst: %s\t| tRot: %.2f, %.2f\t| pRot: %.2f, %.2f\t| diff: %.2f\t| isLookingAt: %b\t| isReallyClose: %b%n\n",
+                    targetBlock,
+                    targetRot.getYaw(), targetRot.getPitch(),
+                    playerRot.getYaw(), playerRot.getPitch(),
+                    Math.abs(Rotation.normalizeYaw(targetRot.getYaw()) - Rotation.normalizeYaw(playerRot.getYaw())),
+                    ctx.isLookingAt(targetBlock),
+                    ctx.playerRotations().isReallyCloseToWithEpsilon(targetRot, Rotation.OPTIMAL_EPSILON_FOR_ROTATION_COMPARE)
+            );
+            
+            if (!ctx.isLookingAt(toPlace.get().placeAgainst) || !ctx.playerRotations().isReallyCloseToWithEpsilon(rot, Rotation.OPTIMAL_EPSILON_FOR_ROTATION_COMPARE)) {
+                baritone.getLookBehavior().updateTarget(rot, true);
+            }
             ctx.player().getInventory().setSelectedSlot(toPlace.get().hotbarSelection);
             baritone.getInputOverrideHandler().setInputForceState(Input.SNEAK, true);
-            if ((ctx.isLookingAt(toPlace.get().placeAgainst) && ((BlockHitResult) ctx.objectMouseOver()).getDirection().equals(toPlace.get().side)) || ctx.playerRotations().isReallyCloseTo(rot)) {
+            if ((ctx.isLookingAt(toPlace.get().placeAgainst) && ((BlockHitResult) ctx.objectMouseOver()).getDirection().equals(toPlace.get().side))
+                    || ctx.playerRotations().isReallyCloseToWithEpsilon(rot, Rotation.OPTIMAL_EPSILON_FOR_ROTATION_COMPARE)) {
                 baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT, true);
             }
             return new PathingCommand(null, PathingCommandType.CANCEL_AND_SET_GOAL);

@@ -131,6 +131,24 @@ public class Rotation {
         float yawDiff = Math.abs(normalizeYaw(yaw) - normalizeYaw(other.yaw)); // you cant fool me
         return (yawDiff < 0.01 || yawDiff > 359.99);
     }
+    
+    /**
+     * Is really close to with coefficient
+     *
+     * @param other another rotation
+     * @param epsilon max difference
+     * @return are they really close
+     */
+    public boolean isReallyCloseToWithEpsilon(Rotation other, float epsilon) {
+        return yawIsReallyCloseWithEpsilon(other, epsilon) && Math.abs(this.pitch - other.pitch) < epsilon;
+    }
+    
+    public boolean yawIsReallyCloseWithEpsilon(Rotation other, float epsilon) {
+        float yawDiff = Math.abs(normalizeYaw(yaw) - normalizeYaw(other.yaw)); // you cant fool me
+        return (yawDiff < epsilon || yawDiff > (360 - epsilon));
+    }
+    
+    public static float OPTIMAL_EPSILON_FOR_ROTATION_COMPARE = 0.7f;
 
     /**
      * Clamps the specified pitch value between -90 and 90.
