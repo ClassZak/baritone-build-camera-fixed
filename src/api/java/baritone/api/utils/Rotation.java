@@ -22,17 +22,17 @@ package baritone.api.utils;
  * @since 9/25/2018
  */
 public class Rotation {
-
+    
     /**
      * The yaw angle of this Rotation
      */
     private final float yaw;
-
+    
     /**
      * The pitch angle of this Rotation
      */
     private final float pitch;
-
+    
     public Rotation(float yaw, float pitch) {
         this.yaw = yaw;
         this.pitch = pitch;
@@ -40,21 +40,21 @@ public class Rotation {
             throw new IllegalStateException(yaw + " " + pitch);
         }
     }
-
+    
     /**
      * @return The yaw of this rotation
      */
     public float getYaw() {
         return this.yaw;
     }
-
+    
     /**
      * @return The pitch of this rotation
      */
     public float getPitch() {
         return this.pitch;
     }
-
+    
     /**
      * Adds the yaw/pitch of the specified rotations to this
      * rotation's yaw/pitch, and returns the result.
@@ -68,7 +68,7 @@ public class Rotation {
                 this.pitch + other.pitch
         );
     }
-
+    
     /**
      * Subtracts the yaw/pitch of the specified rotations from this
      * rotation's yaw/pitch, and returns the result.
@@ -82,7 +82,7 @@ public class Rotation {
                 this.pitch - other.pitch
         );
     }
-
+    
     /**
      * @return A copy of this rotation with the pitch clamped
      */
@@ -92,7 +92,7 @@ public class Rotation {
                 clampPitch(this.pitch)
         );
     }
-
+    
     /**
      * @return A copy of this rotation with the yaw normalized
      */
@@ -102,7 +102,7 @@ public class Rotation {
                 this.pitch
         );
     }
-
+    
     /**
      * @return A copy of this rotation with the pitch clamped and the yaw normalized
      */
@@ -112,11 +112,11 @@ public class Rotation {
                 clampPitch(this.pitch)
         );
     }
-
+    
     public Rotation withPitch(float pitch) {
         return new Rotation(this.yaw, pitch);
     }
-
+    
     /**
      * Is really close to
      *
@@ -126,7 +126,7 @@ public class Rotation {
     public boolean isReallyCloseTo(Rotation other) {
         return yawIsReallyClose(other) && Math.abs(this.pitch - other.pitch) < 0.01;
     }
-
+    
     public boolean yawIsReallyClose(Rotation other) {
         float yawDiff = Math.abs(normalizeYaw(yaw) - normalizeYaw(other.yaw)); // you cant fool me
         return (yawDiff < 0.01 || yawDiff > 359.99);
@@ -149,7 +149,7 @@ public class Rotation {
     }
     
     public static float OPTIMAL_EPSILON_FOR_ROTATION_COMPARE = 0.7f;
-
+    
     /**
      * Clamps the specified pitch value between -90 and 90.
      *
@@ -159,7 +159,7 @@ public class Rotation {
     public static float clampPitch(float pitch) {
         return Math.max(-90, Math.min(90, pitch));
     }
-
+    
     /**
      * Normalizes the specified yaw value between -180 and 180.
      *
@@ -176,7 +176,7 @@ public class Rotation {
         }
         return newYaw;
     }
-
+    
     /**
      * Gets the distance between a starting yaw and an offset yaw.
      * Distance can be negative if the offset yaw is behind of the starting yaw.
@@ -196,7 +196,7 @@ public class Rotation {
             return yaw - offsetYaw;
         }
     }
-
+    
     @Override
     public String toString() {
         return "Yaw: " + yaw + ", Pitch: " + pitch;
