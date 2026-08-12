@@ -1,5 +1,7 @@
 # Baritone
 
+# Fixed camera rotation for break/place the block. The camera does not jerk after successfully targeting the desired block face.
+
 <p align="center">
   <a href="https://github.com/cabaletta/baritone/releases/"><img src="https://img.shields.io/github/downloads/cabaletta/baritone/total.svg" alt="GitHub All Releases"/></a>
 </p>
