@@ -148,7 +148,7 @@ public class Rotation {
         return (yawDiff < epsilon || yawDiff > (360 - epsilon));
     }
     
-    public static float OPTIMAL_EPSILON_FOR_ROTATION_COMPARE = 0.7f;
+    public static float OPTIMAL_EPSILON_FOR_ROTATION_COMPARE = 0.1f;
     
     /**
      * Clamps the specified pitch value between -90 and 90.

@@ -91,6 +91,12 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
     private int numRepeats;
     private List<BlockState> approxPlaceable;
     public int stopAtHeight = 0;
+    private BlockPos lastBrokenPos = null;
+    private int breakEventCount = 0;
+    public final int MAX_BREAK_ATTEMPTS = 2;
+    private BlockPos lastPlacePos = null;
+    private int placeEventCount = 0;
+    public final int MAX_PLACE_ATTEMPTS = 2;
     
     public BuilderProcess(Baritone baritone) {
         super(baritone);
@@ -269,12 +275,19 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
     private Optional<Tuple<BetterBlockPos, Rotation>> toBreakNearPlayer(BuilderCalculationContext bcc) {
         BetterBlockPos center = ctx.playerFeet();
         BetterBlockPos pathStart = baritone.getPathingBehavior().pathStart();
+        debug("Scanning for break near " + center);
         for (int dx = -5; dx <= 5; dx++) {
             for (int dy = Baritone.settings().breakFromAbove.value ? -1 : 0; dy <= 5; dy++) {
                 for (int dz = -5; dz <= 5; dz++) {
                     int x = center.x + dx;
                     int y = center.y + dy;
                     int z = center.z + dz;
+                    // Пропуск, если превышен лимит попыток
+                    if (lastBrokenPos != null && breakEventCount >= MAX_BREAK_ATTEMPTS) {
+                        if (lastBrokenPos.getX() == x && lastBrokenPos.getY() == y && lastBrokenPos.getZ() == z) {
+                            continue;
+                        }
+                    }
                     if (dy == -1 && x == pathStart.x && z == pathStart.z) {
                         continue; // dont mine what we're supported by, but not directly standing on
                     }
@@ -313,12 +326,18 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
     
     private Optional<Placement> searchForPlacables(BuilderCalculationContext bcc, List<BlockState> desirableOnHotbar) {
         BetterBlockPos center = ctx.playerFeet();
+        debug("Scanning for place near " + center);
         for (int dx = -5; dx <= 5; dx++) {
             for (int dy = -5; dy <= 1; dy++) {
                 for (int dz = -5; dz <= 5; dz++) {
                     int x = center.x + dx;
                     int y = center.y + dy;
                     int z = center.z + dz;
+                    if (lastPlacePos != null && placeEventCount >= MAX_PLACE_ATTEMPTS) {
+                        if (lastPlacePos.getX() == x && lastPlacePos.getY() == y && lastPlacePos.getZ() == z) {
+                            continue;
+                        }
+                    }
                     BlockState desired = bcc.getSchematic(x, y, z, bcc.bsi.get0(x, y, z));
                     if (desired == null) {
                         continue; // irrelevant
@@ -431,6 +450,47 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
             default: // null
                 throw new IllegalStateException("Unexpected side " + side);
         }
+    }
+    
+    public void onBlockBroken(BlockPos brokenPos) {
+        if (!isActive()) return;
+        if (brokenPos == null) return;
+        
+        if (lastBrokenPos == null) {
+            lastBrokenPos = brokenPos;
+            breakEventCount = 1;
+            return;
+        }
+        if (brokenPos.equals(lastBrokenPos)) {
+            breakEventCount++;
+        } else {
+            breakEventCount = 1;
+            lastBrokenPos = brokenPos;
+        }
+    }
+    
+    public void onBlockPlaced(BlockPos placedPos) {
+        if (!isActive()) return;
+        if (placedPos == null) return;
+        
+        if (lastPlacePos == null) {
+            lastPlacePos = placedPos;
+            placeEventCount = 1;
+            return;
+        }
+        if (placedPos.equals(lastPlacePos)) {
+            placeEventCount++;
+        } else {
+            placeEventCount = 1;
+            lastPlacePos = placedPos;
+        }
+    }
+    
+    private void debug(String msg) {
+        if (Baritone.settings().chatDebug.value) {
+            System.out.println("[BuilderDebug] " + msg);
+        }
+        System.out.println("[BuilderDebug] " + msg);
     }
     
     @Override
@@ -556,22 +616,9 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
         }
         List<BlockState> desirableOnHotbar = new ArrayList<>();
         Optional<Placement> toPlace = searchForPlacables(bcc, desirableOnHotbar);
+        // Same as above: avoid jitter by skipping redundant rotation updates.
         if (toPlace.isPresent() && isSafeToCancel && ctx.player().onGround() && ticks <= 0) {
             Rotation rot = toPlace.get().rot;
-            // Same as above: avoid jitter by skipping redundant rotation updates.
-            BlockPos targetBlock = toPlace.get().placeAgainst;
-            Rotation targetRot = toPlace.get().rot;
-            Rotation playerRot = ctx.playerRotations();
-            System.out.printf(
-                    "placeAgainst: %s\t| tRot: %.2f, %.2f\t| pRot: %.2f, %.2f\t| diff: %.2f\t| isLookingAt: %b\t| isReallyClose: %b%n\n",
-                    targetBlock,
-                    targetRot.getYaw(), targetRot.getPitch(),
-                    playerRot.getYaw(), playerRot.getPitch(),
-                    Math.abs(Rotation.normalizeYaw(targetRot.getYaw()) - Rotation.normalizeYaw(playerRot.getYaw())),
-                    ctx.isLookingAt(targetBlock),
-                    ctx.playerRotations().isReallyCloseToWithEpsilon(targetRot, Rotation.OPTIMAL_EPSILON_FOR_ROTATION_COMPARE)
-            );
-            
             if (!ctx.isLookingAt(toPlace.get().placeAgainst) || !ctx.playerRotations().isReallyCloseToWithEpsilon(rot, Rotation.OPTIMAL_EPSILON_FOR_ROTATION_COMPARE)) {
                 baritone.getLookBehavior().updateTarget(rot, true);
             }
@@ -722,6 +769,7 @@ outer:
     }
     
     private Goal assemble(BuilderCalculationContext bcc, List<BlockState> approxPlaceable, boolean logMissing) {
+        debug("Assembling goals, incorrectPositions size: " + incorrectPositions.size());
         List<BetterBlockPos> placeable = new ArrayList<>();
         List<BetterBlockPos> breakable = new ArrayList<>();
         List<BetterBlockPos> sourceLiquids = new ArrayList<>();
@@ -756,15 +804,28 @@ outer:
         });
         incorrectPositions.removeAll(outOfBounds);
         List<Goal> toBreak = new ArrayList<>();
-        breakable.forEach(pos -> toBreak.add(breakGoal(pos, bcc)));
+        breakable.forEach(pos -> {
+            toBreak.add(breakGoal(pos, bcc));
+            debug("Added toBreak: " + pos);
+        });
         List<Goal> toPlace = new ArrayList<>();
         placeable.forEach(pos -> {
             if (!placeable.contains(pos.below()) && !placeable.contains(pos.below(2))) {
                 toPlace.add(placementGoal(pos, bcc));
+                debug("Added toPlace: " + pos);
             }
         });
         sourceLiquids.forEach(pos -> toPlace.add(new GoalBlock(pos.above())));
         
+        debug("placeable count: " + placeable.size() + ", breakable count: " + breakable.size() + ", sourceLiquids: " + sourceLiquids.size() + ", flowingLiquids: " + flowingLiquids.size());
+        debug("toPlace size: " + toPlace.size() + ", toBreak size: " + toBreak.size());
+        if (!toPlace.isEmpty()) {
+            for (Goal g : toPlace) {
+                if (g instanceof GoalGetToBlock) {
+                    debug("toPlace goal: " + ((GoalGetToBlock) g).x + "," + ((GoalGetToBlock) g).y + "," + ((GoalGetToBlock) g).z);
+                }
+            }
+        }
         if (!toPlace.isEmpty()) {
             return new JankyGoalComposite(new GoalComposite(toPlace.toArray(new Goal[0])), new GoalComposite(toBreak.toArray(new Goal[0])));
         }
@@ -1000,6 +1061,10 @@ outer:
         numRepeats = 0;
         paused = false;
         observedCompleted = null;
+        lastBrokenPos = null;
+        breakEventCount = 0;
+        lastPlacePos = null;
+        placeEventCount = 0;
     }
     
     @Override
