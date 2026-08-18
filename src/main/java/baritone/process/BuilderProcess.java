@@ -94,9 +94,14 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
     private BlockPos lastBrokenPos = null;
     private int breakEventCount = 0;
     public final int MAX_BREAK_ATTEMPTS = 2;
+    public final int SLEEP_AFTER_MAX_BREAK_ATTEMPTS_SEC = 5;
+    private final HashMap<BlockPos, Long> breakBlacklist = new HashMap<>();
     private BlockPos lastPlacePos = null;
     private int placeEventCount = 0;
     public final int MAX_PLACE_ATTEMPTS = 2;
+    public final int SLEEP_AFTER_MAX_PLACE_ATTEMPTS_SEC = 5;
+    private final HashMap<BlockPos, Long> placeBlacklist = new HashMap<>();
+    
     
     public BuilderProcess(Baritone baritone) {
         super(baritone);
@@ -282,10 +287,13 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
                     int x = center.x + dx;
                     int y = center.y + dy;
                     int z = center.z + dz;
-                    // Пропуск, если превышен лимит попыток
-                    if (lastBrokenPos != null && breakEventCount >= MAX_BREAK_ATTEMPTS) {
-                        if (lastBrokenPos.getX() == x && lastBrokenPos.getY() == y && lastBrokenPos.getZ() == z) {
+                    BlockPos currPos = new BlockPos(x,y,z);
+                    // Continue if in blacklist
+                    if (breakBlacklist.containsKey(currPos)) {
+                        if (System.currentTimeMillis() < breakBlacklist.get(currPos)) {
                             continue;
+                        } else {
+                            breakBlacklist.remove(currPos);
                         }
                     }
                     if (dy == -1 && x == pathStart.x && z == pathStart.z) {
@@ -326,16 +334,19 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
     
     private Optional<Placement> searchForPlacables(BuilderCalculationContext bcc, List<BlockState> desirableOnHotbar) {
         BetterBlockPos center = ctx.playerFeet();
-        debug("Scanning for place near " + center);
         for (int dx = -5; dx <= 5; dx++) {
             for (int dy = -5; dy <= 1; dy++) {
                 for (int dz = -5; dz <= 5; dz++) {
                     int x = center.x + dx;
                     int y = center.y + dy;
                     int z = center.z + dz;
-                    if (lastPlacePos != null && placeEventCount >= MAX_PLACE_ATTEMPTS) {
-                        if (lastPlacePos.getX() == x && lastPlacePos.getY() == y && lastPlacePos.getZ() == z) {
+                    BlockPos currPos = new BlockPos(x, y, z);
+                    // Continue if in blacklist
+                    if (placeBlacklist.containsKey(currPos)) {
+                        if (System.currentTimeMillis() < placeBlacklist.get(currPos)) {
                             continue;
+                        } else {
+                            placeBlacklist.remove(currPos);
                         }
                     }
                     BlockState desired = bcc.getSchematic(x, y, z, bcc.bsi.get0(x, y, z));
@@ -467,6 +478,14 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
             breakEventCount = 1;
             lastBrokenPos = brokenPos;
         }
+        
+        if (breakEventCount >= MAX_BREAK_ATTEMPTS && !breakBlacklist.containsKey(brokenPos)) {
+            breakBlacklist.put(brokenPos, System.currentTimeMillis() + SLEEP_AFTER_MAX_BREAK_ATTEMPTS_SEC * 1000L);
+            logDirect("Break pos blacklisted " + brokenPos + " for " + SLEEP_AFTER_MAX_BREAK_ATTEMPTS_SEC + " seconds");
+            System.out.println(breakBlacklist);
+            breakEventCount = 0;
+            lastBrokenPos = null;
+        }
     }
     
     public void onBlockPlaced(BlockPos placedPos) {
@@ -484,13 +503,35 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
             placeEventCount = 1;
             lastPlacePos = placedPos;
         }
+        
+        if (placeEventCount >= MAX_PLACE_ATTEMPTS && !placeBlacklist.containsKey(placedPos)) {
+            placeBlacklist.put(placedPos, System.currentTimeMillis() + SLEEP_AFTER_MAX_PLACE_ATTEMPTS_SEC * 1000L);
+            logDirect("Place pos blacklisted " + placedPos + " for " + SLEEP_AFTER_MAX_PLACE_ATTEMPTS_SEC + " seconds");
+            System.out.println(placeBlacklist);
+            placeEventCount = 0;
+            lastPlacePos = null;
+		}
+    }
+    
+    private void pauseForSeconds(int sleepSeconds) {
+        Thread pausingThread = new Thread(() -> {
+            try {
+                this.paused = true;
+                logDirect(String.format("Pause for retry %d seconds", sleepSeconds));
+                Thread.sleep(1000L * sleepSeconds); // используем переданный аргумент
+                this.paused = false;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt(); // восстанавливаем статус прерывания
+                throw new RuntimeException(e);
+            }
+        });
+        pausingThread.start();
     }
     
     private void debug(String msg) {
         if (Baritone.settings().chatDebug.value) {
             System.out.println("[BuilderDebug] " + msg);
         }
-        System.out.println("[BuilderDebug] " + msg);
     }
     
     @Override
@@ -1065,6 +1106,8 @@ outer:
         breakEventCount = 0;
         lastPlacePos = null;
         placeEventCount = 0;
+        placeBlacklist.clear();
+        breakBlacklist.clear();
     }
     
     @Override
